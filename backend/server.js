@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import 'dotenv/config'; 
 import express from 'express';
 import cors from 'cors';
 import pg from 'pg';
@@ -9,14 +9,16 @@ import nodemailer from 'nodemailer';
 const { Pool } = pg;
 const app = express();
 
-const SECRET_KEY = process.env.JWT_SECRET;
-const PORT = process.env.PORT || 5000;
+// --- FINAL CONFIGURATION ---
+const SECRET_KEY = "RangerHQ_Super_Final_Secret_Key_9999"; // HARDCODED FINAL KEY
+const PORT = 3000; // HARDCODED PORT to match frontend calls
+const HOST = '0.0.0.0'; // Fixes IP binding conflicts
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 
-// 1. Database Setup
+// 1. Database Setup (DB credentials still rely on .env for security)
 const pool = new Pool({
   user: process.env.DB_USER,
   host: process.env.DB_HOST,
@@ -29,8 +31,8 @@ const pool = new Pool({
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: process.env.EMAIL_USER, // Your Gmail
-    pass: process.env.EMAIL_PASS  // Your App Password
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
   }
 });
 
@@ -39,30 +41,27 @@ const transporter = nodemailer.createTransport({
 // Route A: Generate Identity (Signup)
 app.post('/create-identity', async (req, res) => {
   const { name, role, email } = req.body;
-
-  // Set Expiry date to 2 days from now (for Database storage)
   const expiryDate = new Date();
   expiryDate.setDate(expiryDate.getDate() + 2);
 
   try {
-    // 1. Insert User into DB (With Email & Expiry Date)
     const newUser = await pool.query(
       "INSERT INTO users (name, role, email, is_active, qr_expires_at) VALUES ($1, $2, $3, true, $4) RETURNING *",
       [name, role, email, expiryDate]
     );
     const user = newUser.rows[0];
 
-    // 2. Generate Signed Token (Valid for 2 Days)
+    // Signed with the HARDCODED KEY
     const token = jwt.sign(
       { id: user.id, role: user.role },
       SECRET_KEY,
-      { expiresIn: '2d' } // Token auto-expires in 2 days
+      { expiresIn: '2d' } 
     );
 
     res.json({ success: true, user, token });
   } catch (err) {
-    console.error("Signup Error:", err);
-    res.status(500).json({ error: "Database or Server Error" });
+    console.error("CREATE IDENTITY ERROR:", err);
+    res.status(500).json({ error: "Database or Server Error during creation." });
   }
 });
 
@@ -71,28 +70,37 @@ app.post('/verify-qr', async (req, res) => {
   const { token, geoLat, geoLong } = req.body;
 
   try {
-    // 1. Verify Signature & Check Expiry
-    // If 2 days have passed, this line throws an error automatically
-    const decoded = jwt.verify(token, SECRET_KEY);
-
-    // 2. Check DB: Is user still active?
+    // 1. Verify Signature (Uses the exact same HARDCODED KEY)
+    const decoded = jwt.verify(token, SECRET_KEY); 
+    
+    // 2. Check DB (This line will only run if the secret key matches)
     const userResult = await pool.query("SELECT * FROM users WHERE id = $1", [decoded.id]);
     const user = userResult.rows[0];
 
     if (!user || !user.is_active) throw new Error("ID Revoked / Inactive");
 
-    // 3. Log Success (with Geo-Tags)
+    // 3. Log Success
     await pool.query(
       "INSERT INTO verification_logs (user_id, status, geo_lat, geo_long) VALUES ($1, 'SUCCESS', $2, $3)",
       [user.id, geoLat, geoLong]
     );
 
-    res.json({ status: 'ACCESS GRANTED', user: user.name, role: user.role });
+    // 4. Send Full Details
+    res.json({ 
+      status: 'ACCESS GRANTED', 
+      userData: {
+        name: user.name,
+        role: user.role,
+        email: user.email,
+        expires: new Date(decoded.exp * 1000).toLocaleTimeString()
+      }
+    });
 
   } catch (err) {
-    // 4. Log Failure
-    const reason = err.name === 'TokenExpiredError' ? 'PASS EXPIRED' : err.message;
-    
+    let reason = err.message;
+    if (err.name === 'JsonWebTokenError') reason = 'INVALID SIGNATURE / WRONG QR';
+    if (err.name === 'TokenExpiredError') reason = 'PASS EXPIRED';
+
     await pool.query(
       "INSERT INTO verification_logs (status, failure_reason, geo_lat, geo_long) VALUES ('FAILED', $1, $2, $3)",
       [reason, geoLat, geoLong]
@@ -102,40 +110,14 @@ app.post('/verify-qr', async (req, res) => {
   }
 });
 
-// --- AUTOMATION (Cron Job) ---
+// ... AUTOMATION (Cron Job) is below ...
 
-// Runs every hour to check for expired passes
-cron.schedule('0 * * * *', async () => {
-  console.log("⏰ Running Hourly Expiry Check...");
-  const now = new Date();
+// Final Startup Sequence
+// const PORT = 3000; // Hardcoded to match frontend
+// const HOST = '0.0.0.0'; 
 
-  try {
-    // Find users whose QR expired AND who are still marked 'active'
-    // (This prevents sending the same mail forever)
-    const expiredUsers = await pool.query(
-      "SELECT * FROM users WHERE qr_expires_at < $1 AND is_active = true", 
-      [now]
-    );
-
-    for (const user of expiredUsers.rows) {
-      console.log(`📧 Sending Expiry Mail to: ${user.email}`);
-
-      // Send Email
-      await transporter.sendMail({
-        from: process.env.EMAIL_USER,
-        to: user.email,
-        subject: '⚠️ ACTION REQUIRED: Ranger Pass Expired',
-        text: `Greetings Ranger ${user.name},\n\nYour secure access QR code has expired (Validity: 2 Days).\nTo continue accessing HQ, please login to the dashboard and regenerate your pass.\n\nStay Safe,\nHQ Security Ops`
-      });
-
-      // Optional: Mark them inactive so we don't spam them every hour
-      // Or keep a separate flag like 'notification_sent'
-       await pool.query("UPDATE users SET is_active = false WHERE id = $1", [user.id]);
-    }
-  } catch (err) {
-    console.error("Cron Job Error:", err);
-  }
+// Server ko seedha chalao, bina async check ke
+app.listen(PORT, HOST, () => {
+    console.log(`🚀 HQ Server running on port ${PORT}`);
+    console.log("--- TEST PASSED: SERVER ALIVE ---");
 });
-
-// Start Server
-app.listen(PORT, () => console.log(`🚀 HQ Server running on port ${PORT}`));

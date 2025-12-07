@@ -1,103 +1,147 @@
-import React, { useState } from 'react';
-import { QrReader } from 'react-qr-reader';
+import React, { useState, useEffect } from 'react';
+import QrScanner from 'react-qr-scanner';
 import axios from 'axios';
 
 const Scanner = () => {
+  const [status, setStatus] = useState('IDLE'); // IDLE, SCANNING, GRANTED, DENIED, TIMEOUT
   const [scanResult, setScanResult] = useState('');
-  const [status, setStatus] = useState('IDLE'); // IDLE, GRANTED, DENIED, ERROR
-  const [serverMsg, setServerMsg] = useState('');
+  const [serverData, setServerData] = useState(null);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [timeLeft, setTimeLeft] = useState(120); // 2 Minutes
+
+  // Feature: Timeout Logic (Keep this)
+  useEffect(() => {
+    let timer;
+    if (status === 'IDLE' && timeLeft > 0) {
+      timer = setInterval(() => setTimeLeft((prev) => prev - 1), 1000);
+    } else if (timeLeft === 0) {
+      setStatus('TIMEOUT');
+    }
+    return () => clearInterval(timer);
+  }, [status, timeLeft]);
 
   const handleScan = (result, error) => {
-    if (result && result?.text !== scanResult) {
+    if (result && result?.text !== scanResult && status === 'IDLE') {
       setScanResult(result?.text);
       verifyPass(result?.text);
     }
   };
+  const handleError = (error) => {
+    // Yeh browser error ko terminal mein print karega
+    console.error("New Scanner Component Error:", error);
+};
 
   const verifyPass = (token) => {
     setStatus('SCANNING');
     
-    // Brownie Point: Capture Location before sending
-    if (!navigator.geolocation) {
-       // Fallback if browser doesn't support GPS
-       sendVerificationRequest(token, null, null);
-       return;
+    // Geolocation Logic (Keep this)
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => sendRequest(token, position.coords.latitude, position.coords.longitude),
+        () => sendRequest(token, null, null)
+      );
+    } else {
+      sendRequest(token, null, null);
     }
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        sendVerificationRequest(token, position.coords.latitude, position.coords.longitude);
-      },
-      (error) => {
-        console.warn("GPS access denied, sending without location.");
-        sendVerificationRequest(token, null, null);
-      }
-    );
   };
 
-  const sendVerificationRequest = async (token, lat, long) => {
+  const sendRequest = async (token, lat, long) => {
     try {
-      const res = await axios.post('http://localhost:3000/verify-qr', {
-        token: token,
-        geoLat: lat,
-        geoLong: long
-      });
-
-      if (res.data.status === 'ACCESS GRANTED') {
-        setStatus('GRANTED');
-        setServerMsg(`Welcome, ${res.data.user} (${res.data.role})`);
-      }
+      const res = await axios.post('http://localhost:3000/verify-qr', { token, geoLat: lat, geoLong: long });
+      
+      // Feature: Show User Details
+      setServerData(res.data.userData); 
+      setStatus('GRANTED');
+      
     } catch (err) {
+      // Feature: Wrong QR/Error Message Handling
+      setErrorMsg(err.response?.data?.reason || "UNKNOWN ERROR");
       setStatus('DENIED');
-      // Backend now sends specific reasons like "PASS EXPIRED"
-      setServerMsg(err.response?.data?.reason || "Verification Failed");
     }
   };
 
-  // UI Helper for Background Color
-  const getBgColor = () => {
-    if (status === 'GRANTED') return '#2ecc71'; // Green
-    if (status === 'DENIED') return '#e74c3c'; // Red
-    return '#ecf0f1'; // Grey (Idle)
+  const resetScanner = () => {
+    setStatus('IDLE');
+    setScanResult('');
+    setServerData(null);
+    setErrorMsg('');
+    setTimeLeft(120); // Reset timer
   };
+
+  // --- RENDER UI ---
+
+  // Timeout Screen UI
+  if (status === 'TIMEOUT') {
+    return (
+      <div style={{ textAlign: 'center', padding: '50px', backgroundColor: '#f0f0f0', border: '2px solid #333' }}>
+        <h1 style={{ color: 'gray', fontSize: '24px' }}>SCANNER SLEEPING (2 MIN TIMEOUT)</h1>
+        <p style={{ marginBottom: '20px' }}>Camera turned off due to inactivity.</p>
+        <button onClick={resetScanner} style={{ padding: '10px 20px', backgroundColor: '#007bff', color: 'white', border: 'none', cursor: 'pointer' }}>
+          WAKE UP SCANNER
+        </button>
+      </div>
+    );
+  }
+
+  const statusColor = status === 'GRANTED' ? 'green' : status === 'DENIED' ? 'red' : 'gray';
 
   return (
-    <div style={{ ...styles.fullScreen, backgroundColor: getBgColor() }}>
-      <div style={styles.scannerBox}>
-        <h2 style={{marginBottom: '20px'}}>Security Checkpoint</h2>
-        
-        {status === 'IDLE' || status === 'SCANNING' ? (
-          <div style={styles.cameraContainer}>
-            <QrReader
-              onResult={handleScan}
-              constraints={{ facingMode: 'environment' }}
-              style={{ width: '100%' }}
+    <div style={{ padding: '20px', textAlign: 'center', maxWidth: '500px', margin: '50px auto', border: `2px solid ${statusColor}` }}>
+      <h2 style={{ color: statusColor, marginBottom: '20px' }}>GATE SECURITY CHECKPOINT</h2>
+      
+      {/* Timer Display */}
+      {status === 'IDLE' && (
+        <p style={{ fontSize: '12px', color: 'gray' }}>Auto-Off In: {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}</p>
+      )}
+
+      {/* Scanner Box (Fixed size for reliable scanning) */}
+      {(status === 'IDLE' || status === 'SCANNING') && (
+        <div style={{ width: '300px', height: '300px', margin: '15px auto', border: '1px solid #333', overflow: 'hidden' }}>
+            <QrScanner
+                // Naye component mein onResult ki jagah onDecode use hota hai
+                onDecode={handleScan} 
+                onError={handleError}
+                constraints={{ video: { facingMode: 'environment' } }}
+                videoStyle={{ width: '100%', height: '100%' }}
+                style={{ width: '100%', height: '100%' }}
             />
-            <div style={styles.overlay}>Align QR Code</div>
+        </div>
+      )}
+
+      {/* Status Output */}
+      <div style={{ marginTop: '20px', padding: '15px', backgroundColor: statusColor, color: 'white', borderRadius: '5px' }}>
+        {status === 'IDLE' && <p>Awaiting Identity Scan...</p>}
+        {status === 'SCANNING' && <p>Authenticating...</p>}
+        
+        {/* GRANTED Status & Details Card */}
+        {status === 'GRANTED' && serverData && (
+          <div>
+            <h3 style={{ fontSize: '24px', margin: '0 0 10px 0' }}>✅ ACCESS GRANTED</h3>
+            <div style={{ backgroundColor: 'white', color: '#333', padding: '15px', borderRadius: '5px', textAlign: 'left' }}>
+              <p><strong>Name:</strong> {serverData.name}</p>
+              <p><strong>Designation:</strong> {serverData.role}</p>
+              <p><strong>Email:</strong> {serverData.email}</p>
+              <p><strong>Token Expires:</strong> {serverData.expires}</p>
+            </div>
+            <button onClick={resetScanner} style={{ padding: '8px 15px', marginTop: '10px', backgroundColor: '#0056b3', color: 'white', border: 'none', cursor: 'pointer' }}>
+              SCAN NEXT
+            </button>
           </div>
-        ) : (
-          <div style={styles.resultContainer}>
-            <h1 style={{fontSize: '40px', color: 'white'}}>
-              {status === 'GRANTED' ? 'ACCESS GRANTED' : 'ACCESS DENIED'}
-            </h1>
-            <p style={{color: 'white', fontSize: '20px'}}>{serverMsg}</p>
-            
-            <button onClick={() => { setStatus('IDLE'); setScanResult(''); }} style={styles.resetBtn}>
-              Scan Next Ranger
+        )}
+        
+        {/* DENIED Status & Error Message */}
+        {status === 'DENIED' && (
+          <div>
+            <h3 style={{ fontSize: '24px', margin: '0 0 10px 0' }}>❌ ACCESS DENIED</h3>
+            <p style={{ backgroundColor: 'white', color: 'red', padding: '10px', borderRadius: '5px', fontWeight: 'bold' }}>Reason: {errorMsg}</p>
+            <button onClick={resetScanner} style={{ padding: '8px 15px', marginTop: '10px', backgroundColor: '#8b0000', color: 'white', border: 'none', cursor: 'pointer' }}>
+              RETRY SCAN
             </button>
           </div>
         )}
       </div>
     </div>
   );
-};
-
-const styles = {
-  fullScreen: { height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Arial' },
-  scannerBox: { background: 'white', padding: '20px', borderRadius: '15px', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', textAlign: 'center', maxWidth: '400px', width: '90%' },
-  cameraContainer: { position: 'relative', overflow: 'hidden', borderRadius: '10px' },
-  overlay: { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', border: '2px solid rgba(255,255,255,0.7)', padding: '50px', borderRadius: '10px', pointerEvents: 'none' },
-  resetBtn: { marginTop: '20px', padding: '10px 20px', fontSize: '18px', border: 'none', borderRadius: '5px', cursor: 'pointer', background: 'white', color: '#333' }
 };
 
 export default Scanner;

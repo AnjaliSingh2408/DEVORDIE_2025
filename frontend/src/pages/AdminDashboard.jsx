@@ -3,7 +3,6 @@ import axios from 'axios';
 import { QRCodeCanvas } from 'qrcode.react';
 
 const AdminDashboard = () => {
-  // Added 'email' to state because backend expects it now
   const [formData, setFormData] = useState({ name: '', role: '', email: '' });
   const [qrToken, setQrToken] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -16,87 +15,86 @@ const AdminDashboard = () => {
   const handleGenerate = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setMessage('');
     setQrToken(null);
+    setMessage('');
 
     try {
-      // Sending Name, Role, AND Email to backend
       const res = await axios.post('http://localhost:3000/create-identity', formData);
-      
-      setQrToken(res.data.token); // Store the signed token string
-      setMessage(`✅ Success! Pass generated for ${res.data.user.name}. Valid for 2 Days.`);
+      setQrToken(res.data.token);
+      setMessage(`Success: Identity Secured for ${res.data.user.name}`);
     } catch (err) {
-      console.error(err);
-      setMessage("❌ Error: Could not generate pass. Is the server running?");
+      setMessage("Error: Could not generate pass. Check Backend Connection.");
     } finally {
       setLoading(false);
     }
   };
 
+  const inputStyle = { padding: '8px', marginBottom: '10px', width: '100%', boxSizing: 'border-box' };
+  const buttonStyle = { padding: '10px', backgroundColor: '#e74c3c', color: 'white', border: 'none', cursor: 'pointer', width: '100%' };
+
   return (
-    <div style={styles.container}>
-      <h2 style={{color: '#333'}}>HQ Identity Generator</h2>
+    <div style={{ maxWidth: '400px', margin: '50px auto', padding: '20px', border: '1px solid #ccc', borderRadius: '5px', backgroundColor: '#f9f9f9' }}>
+      <h2 style={{ textAlign: 'center', marginBottom: '20px', color: '#007bff' }}>HQ Identity Generator</h2>
       
-      <form onSubmit={handleGenerate} style={styles.form}>
+      <form onSubmit={handleGenerate}>
         <input 
-          type="text" 
-          name="name" 
-          placeholder="Ranger Name" 
-          required 
-          onChange={handleChange} 
-          style={styles.input}
-        />
+            type="text" 
+            name="name" 
+            onChange={handleChange}
+            required
+            // *** CHANGE THIS LINE ***
+            className="w-full mt-1 bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 text-cyan-400 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+            placeholder="Ex: Tommy Oliver"
+          />
         
-        {/* NEW: Email Input for Notifications */}
+        {/* Keeping Email Input for Notification Feature */}
         <input 
           type="email" 
           name="email" 
-          placeholder="Ranger Email (for Expiry Alerts)" 
-          required 
-          onChange={handleChange} 
-          style={styles.input}
+          onChange={handleChange}
+          required
+          // *** CHANGE THIS LINE ***
+          className="w-full mt-1 bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 text-cyan-400 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+          placeholder="ranger@hq.com"
         />
 
-        <select name="role" required onChange={handleChange} style={styles.input}>
-          <option value="">Select Role</option>
-          <option value="Red Ranger">Red Ranger</option>
-          <option value="Blue Ranger">Blue Ranger</option>
-          <option value="Security Chief">Security Chief</option>
+        <select 
+          name="role" 
+          onChange={handleChange}
+          required
+          // *** CHANGE THIS LINE ***
+          className="w-full mt-1 bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 text-cyan-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all appearance-none"
+        >
+          <option value="">Select Clearance Level</option>
+          <option value="Red Ranger">🔴 Red Ranger (Commander)</option>
+          <option value="Blue Ranger">🔵 Blue Ranger (Tech)</option>
+          <option value="Black Ranger">⚫ Black Ranger (Stealth)</option>
+          <option value="Pink Ranger">🩷 Pink Ranger (Rescue)</option>
+          <option value="Yellow Ranger">🟡 Yellow Ranger (Combat)</option>
+          <option value="Green Ranger">🟢 Green Ranger (Ops)</option>
+          <option value="Security Chief">🛡️ Security Chief</option>
+          <option value="Zord Mechanic">🔧 Zord Mechanic</option>
+          <option value="Medical Staff">⚕️ Medical Staff</option>
         </select>
 
-        <button type="submit" style={styles.button} disabled={loading}>
-          {loading ? 'Generating...' : 'Generate Secure Pass'}
+        <button type="submit" disabled={loading} style={buttonStyle}>
+          {loading ? "Generating..." : "Generate Secure Pass"}
         </button>
       </form>
 
-      {message && <p style={{marginTop: '15px', fontWeight: 'bold'}}>{message}</p>}
+      {message && <p style={{ color: message.includes('Error') ? 'red' : 'green', marginTop: '15px' }}>{message}</p>}
 
       {qrToken && (
-        <div style={styles.qrContainer}>
-          <h3>Official Digital Pass</h3>
-          <p style={{fontSize: '12px', color: '#666'}}>Scan this at the entry gate</p>
-          
-          <div style={{background: 'white', padding: '10px', display: 'inline-block'}}>
-            <QRCodeCanvas value={qrToken} size={200} />
+        <div style={{ marginTop: '20px', textAlign: 'center' }}>
+          <h3>Scan This Pass:</h3>
+          <div style={{ padding: '10px', border: '1px solid #333', display: 'inline-block', backgroundColor: 'white' }}>
+            <QRCodeCanvas value={qrToken} size={180} />
           </div>
-          
-          <p style={styles.tokenText}>
-            Token Signature: {qrToken.substring(0, 20)}...
-          </p>
+          <p style={{ fontSize: '10px', color: '#666', marginTop: '10px' }}>TOKEN: {qrToken.substring(0, 15)}...</p>
         </div>
       )}
     </div>
   );
-};
-
-// Simple Styles
-const styles = {
-  container: { maxWidth: '500px', margin: '40px auto', textAlign: 'center', fontFamily: 'Arial, sans-serif' },
-  form: { display: 'flex', flexDirection: 'column', gap: '15px' },
-  input: { padding: '12px', borderRadius: '5px', border: '1px solid #ccc', fontSize: '16px' },
-  button: { padding: '12px', background: '#e74c3c', color: 'white', border: 'none', borderRadius: '5px', fontSize: '16px', cursor: 'pointer' },
-  qrContainer: { marginTop: '30px', padding: '20px', background: '#f9f9f9', borderRadius: '10px', border: '2px dashed #ccc' },
-  tokenText: { fontSize: '10px', color: '#999', marginTop: '10px', wordBreak: 'break-all' }
 };
 
 export default AdminDashboard;

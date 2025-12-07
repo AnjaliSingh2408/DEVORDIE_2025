@@ -6,20 +6,17 @@ import Scanner from './pages/Scanner';
 function App() {
   return (
     <Router>
-      <div>
-        {/* Simple Navigation Bar */}
-        <nav style={{padding: '10px', background: '#333', color: 'white', marginBottom: '20px'}}>
-          <Link to="/admin" style={{marginRight: '15px', color: 'white'}}>Admin Panel</Link>
-          <Link to="/scan" style={{color: 'white'}}>Scanner</Link>
+      {/* Tailwind Dark Background applied to the whole app */}
+      <div className="min-h-screen bg-slate-950">
+        <nav className="p-4 bg-slate-900 border-b border-slate-800 flex justify-center space-x-8">
+          <Link to="/admin" className="text-slate-300 hover:text-white font-bold transition-colors">ADMIN PANEL</Link>
+          <Link to="/scan" className="text-slate-300 hover:text-blue-400 font-bold transition-colors">SECURE SCANNER</Link>
         </nav>
 
         <Routes>
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/scan" element={<Scanner />} />
-          <Route path="/" element={<div style={{textAlign: 'center', marginTop: '50px'}}>
-            <h1>Welcome to Ranger HQ</h1>
-            <p>Select a portal from the menu above.</p>
-          </div>} />
+          <Route path="/" element={<AdminDashboard />} /> {/* Default to Admin */}
         </Routes>
       </div>
     </Router>
